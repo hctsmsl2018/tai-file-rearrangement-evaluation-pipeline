@@ -10,14 +10,14 @@ class File:
     def __init__(self, path, file_hash=None):
         self.path = create_path_repr(path)
 
-        if file_hash is not None:
-            self.hash = file_hash
-        else:
+        if file_hash is None:
             with open(path, "rb") as f:
-                self.hash = file_digest(f, "md5").hexdigest()
+                file_hash = file_digest(f, "sha256").hexdigest()
+        print(path, file_hash)
+        self.hash = hash(file_hash)
 
     def __hash__(self):
-        return hash(self.hash)
+        return self.hash
 
     def __eq__(self, other):
         return self.hash == other.hash
@@ -28,7 +28,11 @@ class File:
     def __repr__(self):
         return f"File({self.path})"
 
-create_path_repr = lambda path: Path(*path.parts[1:])
+def create_path_repr(path):
+    if len(path.parts) > 0 and path.parts[0] == "C:\\":
+        path = Path(*path.parts[1:])
+
+    return path
 
 def evaluate_folder(ground_truth_folder_data, prediction_folder_data, folder_path=ROOT_PATH, ignore_files=False, limit=3):
     item_to_check = "subfolders" if ignore_files else "files"
@@ -66,15 +70,14 @@ def evaluate_folder(ground_truth_folder_data, prediction_folder_data, folder_pat
     recall = true_positives / true_labels if true_labels > 0 else 0
     f1 = 2 * (precision * recall) / (precision + recall) if {precision, recall} != {0} else 0
     
-    folder_info = {"folder": str(folder_path)}
+    folder_info = {"folder": str(folder_path), "precision": precision, "recall": recall, "f1": f1}
 
     correctly_arranged = precision == 1 and recall == 1 or folder_path in prediction_folder_data and len(ground_truth_folder_content) == 0 and len(prediction_folder_content) == 0
-    folder_info |= {"This subfolder is correctly arranged": None} if correctly_arranged else {"precision": precision, "recall": recall, "f1": f1}
 
     if len(children) != 0:
-        folder_info["children"] = children
+        folder_info["children"] = "Children are excluded as this subfolder is correctly arranged" if correctly_arranged else children
 
-    if folder_path in prediction_folder_data:
+    if folder_path in prediction_folder_data and not correctly_arranged:
         folder_info["false_positives"] = false_positives
         folder_info["false_negatives"] = false_negatives
 

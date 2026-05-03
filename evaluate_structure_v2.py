@@ -2,6 +2,7 @@ from pathlib import Path
 import argparse
 import pickle
 import json
+from contextlib import chdir
 
 from evaluate_classification import evaluate_folder, create_folder_children_dict, ROOT_PATH, PREDICTION_PATH
 
@@ -32,6 +33,7 @@ def get_top_down_files(children_dict, limit):
 
 def get_bottom_up_score(ground_truth_dict, prediction_dict, limit):
     prediction_files = {file:file.path for children in prediction_dict.values() for file in children["files"]}
+    #print(prediction_files)
     ground_truth_file_to_prediction_path = {file: prediction_files[file] for children in ground_truth_dict.values() for file in children["files"]}
 
     def _get_folder_score(folder, limit):
@@ -39,13 +41,21 @@ def get_bottom_up_score(ground_truth_dict, prediction_dict, limit):
 
         total = 0
         correct = 0
+
+        incorrect_paths = []
         
         for file in children["files"]:
             prediction_path = ground_truth_file_to_prediction_path[file]
 
             if folder == Path("."):
                 total += 1
-                correct += int(len(prediction_path.parts) == 1)
+
+                curr_file_correct = len(prediction_path.parts) == 1
+
+                correct += int(curr_file_correct)
+
+                if not curr_file_correct:
+                    incorrect_paths.append(str(prediction_path))
             else:
                 ground_truth_comparison_len = min(limit, len(folder.parts))
                 prediction_comparison_len = min(ground_truth_comparison_len, len(prediction_path.parts) - 1)
@@ -57,7 +67,12 @@ def get_bottom_up_score(ground_truth_dict, prediction_dict, limit):
                 ground_truth_to_compare = folder.parts[-prediction_comparison_len:]
                 predictions_to_compare = prediction_path.parts[comparison_start_ind:-1]
 
-                correct += sum(g == p for g, p in zip(ground_truth_to_compare, predictions_to_compare))
+                num_parts_correct = sum(g == p for g, p in zip(ground_truth_to_compare, predictions_to_compare))
+
+                correct += num_parts_correct
+
+                if ground_truth_comparison_len != num_parts_correct:
+                    incorrect_paths.append(str(prediction_path))
 
         children_acc_info = []
 
@@ -74,8 +89,11 @@ def get_bottom_up_score(ground_truth_dict, prediction_dict, limit):
             accuracy = correct / total
             folder_info["accuracy"] = accuracy
 
+        if len(incorrect_paths) != 0:
+            folder_info["incorrect_paths"] = incorrect_paths
+
         if len(children_acc_info) != 0:
-            folder_info["children"] = children_acc_info
+            folder_info["children"] = "Children are excluded as this subfolder is correctly arranged" if total == correct else children_acc_info
 
         return total, correct, folder_info
 
@@ -83,16 +101,17 @@ def get_bottom_up_score(ground_truth_dict, prediction_dict, limit):
     return eval_info
 
 def build_tree_from_files(path):
-    cache_file = Path(f"tree_{str(path)}.pkl")
-        
+    cache_file = Path(f"file_tree_reprs/tree_{str(path)}.pkl")
+
     if cache_file.exists():
         with open(cache_file, "rb") as f:
             tree = pickle.load(f)
     else:
         tree = {}
 
-        create_folder_children_dict(path, tree)
-        
+        with chdir("test_arrangements" / path):
+            create_folder_children_dict(Path("."), tree)
+
         with open(cache_file, "wb") as f:
             pickle.dump(tree, f)
 
@@ -107,7 +126,7 @@ def evaluate_tree(ground_truth_path, prediction_path, ground_truth_tree, predict
     elif method == "bottom_up":
         evaluation_report = get_bottom_up_score(ground_truth_tree, prediction_tree, limit)
 
-    with open(f"{str(ground_truth_path)}_{str(prediction_path)}_{method}.json", "w") as f:
+    with open(f"evaluation_reports/{str(ground_truth_path)}_{str(prediction_path)}_{method}.json", "w") as f:
         json.dump(evaluation_report, f, indent=2)
 
 def create_and_evaluate_trees(ground_truth_path, prediction_path, method, limit=3):
