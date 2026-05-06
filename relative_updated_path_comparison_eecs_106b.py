@@ -1,17 +1,7 @@
+import re
+import argparse
 import sqlite3
 from pathlib import Path
-import re
-
-"""
-Use JSON to describe: ground truth path, prediction path, correct or not
-
-Team 1:
-
-User-friendly metrics
-Any indicators of a good rearrangement
-
-Next task: vibe code (?) a useful demo to present
-"""
 
 def normalize_directory_names(path):
     alnum_tokens_in_dirs = (re.findall("[a-zA-Z0-9]+", part) for part in path.parts)
@@ -25,7 +15,12 @@ def normalize_directory_names(path):
     return Path("/".join(new__path_parts))
 
 def main():
-    conn = sqlite3.connect("databases/EECS_106B_metadata.db")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--database_path", "-d", type=str, default="databases/EECS_106B_metadata.db", help="The path to the SQLite database containing ground truth and predicted paths")
+
+    args = parser.parse_args()
+
+    conn = sqlite3.connect(args.database_path)
 
     cursor = conn.execute("SELECT relative_path, file_path FROM file_new_hybrid")
 
